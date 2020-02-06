@@ -3,6 +3,9 @@ const Product = require('../models/product')
 const User = require('../models/user')
 const mongoose = require('mongoose');
 const validateToken = require('../validation/validatetoken')
+const validateItemInput = require('../validation/product')
+
+//<---------------------------get all products, no token validation required----------------------->
 
 const getProducts = async (req, res, next) => {
 
@@ -22,6 +25,8 @@ const getProducts = async (req, res, next) => {
     //changes the product from mongoose format to JV
     res.json({products: product});
 };
+
+//<---------------------------get products by ID, no token validation required----------------------->
 
 const getProductByID = async (req, res, next) => {
     const productId = req.params.pid;
@@ -43,8 +48,10 @@ const getProductByID = async (req, res, next) => {
     res.json({ product: product.toObject({  getters: true }) });
 };
 
+//<---------------------------get products by user, no token validation required----------------------->
+
 const getProductsByUser = async (req, res, next) => {
-    const userId = req.params.pid;
+    const userId = req.params.uid;
     
     let userProducts;
 
@@ -55,25 +62,42 @@ const getProductsByUser = async (req, res, next) => {
         const error = new HttpError('Opps, something went wrong. Please try again later', 500);
         return next(error);
     }
-
-    if (!userProducts || userProducts.products.length === 0 ) {
-        //refactored shorter
-        return next(new HttpError('The user has not posted any items yet.', 404))
-    } 
     res.json({products: userProducts.products.map(product => product.toObject({ getters: true }))});
 };
 
+//<---------------------------create products, token validation required----------------------->
+
 const createProduct  = async (req, res, next) => {
-    const { title, description, price, image } = req.body;
+    
+    const { title, description, price } = req.body;
     const authHeaderValue = req.headers['authorization']
 
-    if (!authHeaderValue) {
-         return next(new HttpError('Session Token Not available, please log in and try again.', 500));
+    const { stringError, isValid } = await validateItemInput(req.body)
+
+    if (!req.file) {
+        return res.status(422).json("Image not attached");
     }
 
+    if (!authHeaderValue) {
+        if (req.file) {
+            fs.unlink(req.file.path, err => {
+              console.log(err)
+            });
+          }
+        return res.status(422).json("Token not available, please log in");
+    }
 
-    const token = await authHeaderValue.replace('Bearer: ', '')
-    const {error, id } = await validateToken(token)
+    if (!isValid) {
+        if (req.file) {
+            fs.unlink(req.file.path, err => {
+              console.log(err)
+            });
+          }
+        return res.status(422).json(stringError);
+    }
+
+    const token = await authHeaderValue.replace('Bearer ', '')
+    const { error, id } = await validateToken(token)
     
     if (error) {
         return next(new HttpError(error.message, 404))
@@ -83,15 +107,17 @@ const createProduct  = async (req, res, next) => {
 
     Creator = await User.findOne({ _id: id })
 
+    if (Creator.id !== id) {
+        return res.status(422).json("You do not have permission to upload this document");
+    }
+
     const createdProduct = new Product({    
         title,
         description,
         price,
-        image,
+        image :req.file.path,
         user: id
             })
-
-    console.log( req.body, Creator, id, createdProduct );
     
      try{
         const sess = await mongoose.startSession();
@@ -101,11 +127,17 @@ const createProduct  = async (req, res, next) => {
         await Creator.save({ session: sess });
         await sess.commitTransaction();
      } catch(err) {
-         const error = new HttpError(err.message, 404);
-         return next(error);
+        if (req.file) {
+            fs.unlink(req.file.path, err => {
+              console.log(err)
+            });
+          }
+        return res.status(422).json("Something went wrong, please try again later");
      }
-     res.status(201).json({ product : createdProduct})
+     res.status(201).json({ message: 'Product Created!' })
 };
+
+//<---------------------------update products, token validation required----------------------->
 
 const updateProductById  = async (req, res, next) => {
     const productId = req.params.pid;
@@ -114,9 +146,14 @@ const updateProductById  = async (req, res, next) => {
 
     const authHeaderValue = req.headers['authorization']
 
-    if (!authHeaderValue) {
-         return next(new HttpError('Session Token Not available, please log in and try again.', 500));
-    }
+    if ( !isValid || !authHeaderValue) {
+        if (req.file) {
+          fs.unlink(req.file.path, err => {
+            console.log(err)
+          });
+        }
+        return res.status(422).json(errors);
+       }
 
     const token = await authHeaderValue.replace('Bearer ', '')
 

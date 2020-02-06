@@ -7,6 +7,7 @@ const productSchema = new Schema({
     totalprice: { type: Number, required: true },
     orders: [{ 
         itemId : { type: mongoose.Types.ObjectId, required: true },
+        image: { type: String, required: true },
         itemname: { type: String, required: true },
         description: { type: String, required: true },
         amount: { type: Number, required: true },

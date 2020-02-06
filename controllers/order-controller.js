@@ -1,33 +1,36 @@
-const HttpError = require("../models/http-error");
+const HttpError = require('../models/http-error');
 const User = require('../models/user')
 const mongoose = require('mongoose');
 const validateToken = require('../validation/validatetoken')
 const Order = require('../models/order')
+const CurrentDate = require('../utils/date')
 
 const newOrder  = async (req, res, next) => {
-    
-     const { totalprice, orders } = req.body;
-     const authHeaderValue = req.headers['authorization']
+
+    const { totalprice, orders } = req.fields;
+    const authHeaderValue = req.headers['authorization']
+
 
      if (!authHeaderValue) {
-          return next(new HttpError('Session Token Not available, please log in and try again.', 500));
+        return res.status(500).json("Session token not available");
      }
 
-     const token = await authHeaderValue.replace('Bearer: ', '');
+     const token = await authHeaderValue.replace('Bearer ', '');
 
      try {
          const { id } = await validateToken(token)    
      } catch (err) {
-         const error = new HttpError(err.message, 500);
-          return next(error);
+        return res.status(500).json("Invalid Token");
      }
 
      Creator = await User.findOne({ _id: id })
 
-     currentTime = Date();
+     const { date } = CurrentDate();
+
+     console.log(date)
 
      const newOrder = new Order({    
-         orderdate : currentTime,
+         orderdate : date,
          totalprice,
          orders,
          user: id
@@ -55,7 +58,7 @@ const getOrdersByUser = async (req, res, next) => {
          return next(new HttpError('Session Token Not available, please log in and try again.', 500));
     }
 
-    const token = await authHeaderValue.replace('Bearer: ', '');
+    const token = await authHeaderValue.replace('Bearer ', '');
     
     try {
         const { id } = await validateToken(token)    
@@ -73,10 +76,6 @@ const getOrdersByUser = async (req, res, next) => {
         const error = new HttpError('Opps, something went wrong. Please try again later', 500);
         return next(error);
     }
-
-    if (!userOrders || userOrders.products.length === 0 ) {
-        return next(new HttpError('The user has not posted any items yet.', 404))
-    } 
     res.json({Order: userOrders.orders.map(product => product.toObject({ getters: true }))})
 };
 
